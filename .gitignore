@@ -14,3 +14,9 @@
 .cxx
 local.properties
 CLAUDE.md
+agent/*
+
+# Local build/test artifacts
+/app/build/
+/build-emulator*.log
+/.kotlin/

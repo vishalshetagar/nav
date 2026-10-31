@@ -1,206 +1,98 @@
 package com.example.nav.overlay
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
+private val Mint = Color(0xFFA5F3D0)
+private val Muted = Color(0xFFABADB7)
+
+/** Voice-only island. Transcripts are display-only; this window never needs keyboard focus. */
 @Composable
 fun AssistantPanel(
-    onDismiss: () -> Unit,
-    onSend: (String) -> Unit,
-    onStartVoice: () -> Unit,
-    onStopVoice: () -> Unit,
-    response: String?,
-    isThinking: Boolean,
-    isListening: Boolean,
-    voiceTranscript: String,
-    rmsLevel: Float
+    expanded: Boolean, maxWidth: Dp, isThinking: Boolean, isListening: Boolean,
+    isExecuting: Boolean, voiceLevel: Float, voiceTranscript: String, status: String,
+    hasTask: Boolean, action: String, step: Int,
+    onStartVoice: () -> Unit, onStopVoice: () -> Unit, onExpand: () -> Unit,
+    onCollapse: () -> Unit, onStop: () -> Unit, onExit: () -> Unit
 ) {
-    var textInput by remember { mutableStateOf("") }
-    var showKeyboardInput by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(32.dp))
-            .background(Color.Black.copy(alpha = 0.95f))
-            .animateContentSize(spring(Spring.DampingRatioLowBouncy, Spring.StiffnessLow))
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth()
+    val label = when {
+        isListening -> "Listening"
+        isExecuting -> "Taking this step"
+        isThinking -> "Thinking"
+        hasTask -> "Step $step"
+        else -> "Tap to speak"
+    }
+    MaterialTheme(colorScheme = darkColorScheme(primary = Mint, surface = Color(0xFF101114), onSurface = Color.White)) {
+        Surface(
+            color = Color(0xFF101114), shape = RoundedCornerShape(30.dp),
+            modifier = Modifier.width(if (expanded) maxWidth else minOf(224.dp, maxWidth)).animateContentSize()
         ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(if (isListening) Color.Green else if (isThinking) Color.Yellow else Color.Gray)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isListening) "Listening" else if (isThinking) "Thinking" else "NaV",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.Gray, modifier = Modifier.size(16.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Main Content Area (Voice or Text)
-            if (!showKeyboardInput) {
-                // Voice Mode (Default)
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = voiceTranscript.ifBlank { if (isListening) "I'm listening..." else "Tap mic to speak" },
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                    
-                    DynamicWaveform(rmsLevel, isListening)
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        IconButton(
-                            onClick = { if (isListening) onStopVoice() else onStartVoice() },
-                            modifier = Modifier
-                                .size(56.dp)
-                                .background(if (isListening) Color.Red.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(28.dp))
-                        ) {
-                            Icon(
-                                Icons.Default.Mic, 
-                                contentDescription = "Voice", 
-                                tint = if (isListening) Color.Red else Color.White,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                        
-                        Spacer(modifier = Modifier.width(24.dp))
-                        
-                        IconButton(
-                            onClick = { showKeyboardInput = true },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
-                        ) {
-                            Icon(Icons.Default.Keyboard, contentDescription = "Keyboard", tint = Color.Gray)
-                        }
-                    }
-                }
-            } else {
-                // Text Input Mode
+            Column {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                        .clickable(onClick = { if (expanded || hasTask || isThinking) onExpand() else onStartVoice() })
+                        .padding(start = 18.dp, end = if (expanded) 4.dp else 18.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextField(
-                        value = textInput,
-                        onValueChange = { textInput = it },
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(24.dp)),
-                        placeholder = { Text("Type here...", color = Color.Gray) },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.White.copy(alpha = 0.1f),
-                            unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        singleLine = true
-                    )
-                    
-                    Spacer(modifier = Modifier.width(8.dp))
-                    
-                    IconButton(
-                        onClick = { showKeyboardInput = false },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(Icons.Default.Mic, contentDescription = "Back to Voice", tint = Color.Gray)
-                    }
-
-                    IconButton(
-                        onClick = { 
-                            onSend(textInput)
-                            textInput = ""
-                        },
-                        enabled = textInput.isNotBlank() && !isThinking,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        if (isThinking) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White)
-                        }
+                    VoiceWave(voiceLevel, isListening, Modifier.size(28.dp, 24.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("NaV", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.width(12.dp))
+                    Text(label, color = if (isListening) Mint else Muted, style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (isThinking || isExecuting) CircularProgressIndicator(Modifier.padding(start = 6.dp).size(14.dp), color = Mint, strokeWidth = 2.dp)
+                    if (expanded) IconButton(onClick = onCollapse, modifier = Modifier.semantics { contentDescription = "Minimize NaV" }) {
+                        Text("−", color = Muted, style = MaterialTheme.typography.titleLarge)
                     }
                 }
-            }
-
-            // Response Area
-            if (response != null && !isListening) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.White.copy(alpha = 0.05f))
-                        .padding(12.dp)
-                ) {
-                    LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
-                        item {
-                            Text(
-                                text = response,
-                                color = Color.LightGray,
-                                fontSize = 15.sp,
-                                lineHeight = 20.sp
-                            )
+                if (expanded) {
+                    Column(Modifier.heightIn(max = 340.dp).verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 16.dp)) {
+                        Text(
+                            if (isListening) voiceTranscript.ifBlank { "What can I help you do?" }
+                            else status.ifBlank { "Your voice. A little guidance." },
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 10.dp)
+                        )
+                        if (!isListening && voiceTranscript.isNotBlank()) Text("You: $voiceTranscript", color = Muted,
+                            style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(bottom = 10.dp))
+                        Text(when {
+                            isListening -> "Speak naturally. Your request sends when you finish."
+                            action.isNotBlank() -> "$action\nSay “do this step” to confirm, or “next” after doing it yourself."
+                            hasTask -> "Tap the mic and say “next”, “repeat”, or “stop”."
+                            else -> "Try “Help me turn on dark mode”."
+                        }, color = Muted, style = MaterialTheme.typography.bodySmall)
+                        Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = if (isListening) onStopVoice else onStartVoice,
+                                enabled = !isExecuting, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Mint, contentColor = Color(0xFF10251C))
+                            ) {
+                                Text(if (isListening) "Cancel mic" else "Speak", fontWeight = FontWeight.SemiBold)
+                            }
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = if (hasTask || isThinking || isListening) onStop else onExit) {
+                                Text(if (hasTask || isThinking || isListening) "Stop" else "Close", color = Muted)
+                            }
                         }
                     }
                 }
@@ -210,45 +102,15 @@ fun AssistantPanel(
 }
 
 @Composable
-fun DynamicWaveform(rmsLevel: Float, isListening: Boolean) {
-    val infiniteTransition = rememberInfiniteTransition(label = "waveform")
-    
-    Row(
-        modifier = Modifier
-            .height(60.dp)
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val barCount = 15
-        for (i in 0 until barCount) {
-            val baseHeight = if (isListening) (rmsLevel.coerceIn(0f, 10f) * 4 + 4) else 4f
-            val animScale by if (isListening) {
-                infiniteTransition.animateFloat(
-                    initialValue = 0.5f,
-                    targetValue = 1.5f,
-                    animationSpec = infiniteRepeatable(
-                        tween(300 + i * 50, easing = LinearEasing),
-                        RepeatMode.Reverse
-                    ),
-                    label = "bar_$i"
-                )
-            } else {
-                remember { mutableFloatStateOf(1f) }
-            }
-
-            Box(
-                modifier = Modifier
-                    .padding(horizontal = 2.dp)
-                    .width(4.dp)
-                    .height((baseHeight * animScale).dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color(0xFF8E2DE2), Color(0xFF4A00E0))
-                        )
-                    )
-            )
+private fun VoiceWave(level: Float, listening: Boolean, modifier: Modifier) {
+    val amplitude by animateFloatAsState(if (listening) level.coerceIn(0f, 1f) else 0.15f, label = "voice level")
+    Canvas(modifier) {
+        val shape = floatArrayOf(0.35f, 0.7f, 1f, 0.65f, 0.4f)
+        shape.forEachIndexed { index, scale ->
+            val height = size.height * (0.18f + amplitude * 0.82f) * scale
+            val x = size.width * (index + 0.5f) / shape.size
+            drawLine(Mint, Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2),
+                strokeWidth = 2.5.dp.toPx(), cap = StrokeCap.Round)
         }
     }
 }

@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">NaV</string>
-    <string name="accessibility_service_description">NaV uses accessibility services to read the screen and provide navigation guidance.</string>
+    <string name="accessibility_service_description">NaV reads visible app text and controls during your tasks and sends them to Groq for guidance. It can click, scroll, or go back when you choose Do this step. Password and Android-marked sensitive fields are excluded. Stop ends the task.</string>
     <string name="bubble_content_description">NaV Assistant Bubble</string>
 </resources>

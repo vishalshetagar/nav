@@ -5,6 +5,9 @@ data class ScreenContext(
     val appName: String,
     val visibleTexts: List<String>,
     val clickableElements: List<ClickableElement>,
+    val allElements: List<UIElement>,
     val scrollable: Boolean,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val windowId: Int = -1,
+    val truncated: Boolean = false
 )

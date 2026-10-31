@@ -6,12 +6,9 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.util.Log
 
+/** One user-initiated recognition session. No background restart loop or transcript logging. */
 class VoiceInputManager(private val context: Context) {
-    private val TAG = "VoiceInputManager"
-    private var speechRecognizer: SpeechRecognizer? = null
-    
     interface VoiceListener {
         fun onReadyForSpeech()
         fun onBeginningOfSpeech()
@@ -22,88 +19,51 @@ class VoiceInputManager(private val context: Context) {
         fun onResults(results: String)
         fun onPartialResults(partialResults: String)
     }
-
+    private var recognizer: SpeechRecognizer? = null
     private var listener: VoiceListener? = null
-
-    private fun initRecognizer() {
-        try {
-            speechRecognizer?.destroy()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error destroying previous recognizer", e)
-        }
-        
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            Log.e(TAG, "Speech Recognition not available")
-            return
-        }
-
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) { listener?.onReadyForSpeech() }
-                override fun onBeginningOfSpeech() { listener?.onBeginningOfSpeech() }
-                override fun onRmsChanged(rmsdB: Float) { listener?.onRmsChanged(rmsdB) }
-                override fun onBufferReceived(buffer: ByteArray?) { listener?.onBufferReceived(buffer) }
-                override fun onEndOfSpeech() { listener?.onEndOfSpeech() }
-                override fun onError(error: Int) {
-                    Log.e(TAG, "Speech Error: $error")
-                    // If busy or client error, force a cleanup
-                    if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
-                        cancel()
-                    }
-                    listener?.onError(error)
-                }
-                override fun onResults(results: Bundle?) {
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (!matches.isNullOrEmpty()) {
-                        Log.d(TAG, "Speech Result: ${matches[0]}")
-                        listener?.onResults(matches[0])
-                    }
-                }
-                override fun onPartialResults(partialResults: Bundle?) {
-                    val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    if (!matches.isNullOrEmpty()) {
-                        listener?.onPartialResults(matches[0])
-                    }
-                }
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-        }
-    }
-
+    private var generation = 0
     fun startListening(language: String = "en-US", listener: VoiceListener) {
+        cancel()
+        val sessionId = generation
         this.listener = listener
-        if (speechRecognizer == null) initRecognizer()
-
-        // Always cancel before starting to prevent "BUSY" errors
-        speechRecognizer?.cancel()
-
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            // Extra sensitivity
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
-        }
-        
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) { listener.onError(SpeechRecognizer.ERROR_CLIENT); return }
         try {
-            speechRecognizer?.startListening(intent)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start listening, re-initializing...", e)
-            initRecognizer()
-            speechRecognizer?.startListening(intent)
-        }
+            recognizer?.destroy()
+            recognizer = SpeechRecognizer.createSpeechRecognizer(context.applicationContext).apply {
+                setRecognitionListener(object : RecognitionListener {
+                    private fun current() = if (sessionId == generation) this@VoiceInputManager.listener else null
+                    override fun onReadyForSpeech(params: Bundle?) { current()?.onReadyForSpeech() }
+                    override fun onBeginningOfSpeech() { current()?.onBeginningOfSpeech() }
+                    override fun onRmsChanged(rmsdB: Float) { current()?.onRmsChanged(rmsdB) }
+                    override fun onBufferReceived(buffer: ByteArray?) { current()?.onBufferReceived(buffer) }
+                    override fun onEndOfSpeech() { current()?.onEndOfSpeech() }
+                    override fun onError(error: Int) {
+                        val callback = current()
+                        if (sessionId == generation) this@VoiceInputManager.listener = null
+                        callback?.onError(error)
+                    }
+                    override fun onResults(results: Bundle?) {
+                        val callback = current()
+                        if (sessionId == generation) this@VoiceInputManager.listener = null
+                        val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                        if (text.isNullOrBlank()) callback?.onError(SpeechRecognizer.ERROR_NO_MATCH) else callback?.onResults(text)
+                    }
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let {
+                            current()?.onPartialResults(it)
+                        }
+                    }
+                    override fun onEvent(eventType: Int, params: Bundle?) = Unit
+                })
+                startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                })
+            }
+        } catch (_: Exception) { this.listener = null; listener.onError(SpeechRecognizer.ERROR_CLIENT) }
     }
-
-    fun stopListening() {
-        speechRecognizer?.stopListening()
-    }
-
-    fun cancel() {
-        speechRecognizer?.cancel()
-    }
-
-    fun destroy() {
-        speechRecognizer?.destroy()
-        speechRecognizer = null
-    }
+    fun cancel() { generation++; listener = null; recognizer?.cancel() }
+    fun destroy() { cancel(); recognizer?.destroy(); recognizer = null }
 }

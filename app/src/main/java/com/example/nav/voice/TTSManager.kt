@@ -30,7 +30,10 @@ class TTSManager(private val context: Context, private val onInit: (Boolean) -> 
             return
         }
 
-        voiceId?.let { setVoiceById(it) }
+        if (voiceId.isNullOrBlank()) {
+            val language = context.getSharedPreferences("nav_prefs", Context.MODE_PRIVATE).getString("preferred_language", "en-US") ?: "en-US"
+            tts?.language = Locale.forLanguageTag(language)
+        } else setVoiceById(voiceId)
         
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "NavTTS")
     }
